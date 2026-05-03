@@ -1,14 +1,20 @@
-use tonic::(transport::Server, Request, Response, Status);
+use tonic::{transport::Server, Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use services::{payment_service_server::{PaymentService, PaymentServiceServer}, PaymentRequest, PaymentResponse,
-    transaction_service_server::{TransactionService, TransactionServiceServer}, TransactionRequest, TransactionResponse};
-
 pub mod services {
     tonic::include_proto!("services");
 }
+
+use services::{
+    payment_service_server::{PaymentService, PaymentServiceServer},
+    PaymentRequest, PaymentResponse,
+    transaction_service_server::{TransactionService, TransactionServiceServer},
+    TransactionRequest, TransactionResponse,
+    chat_service_server::{ChatService, ChatServiceServer},
+    ChatMessage,
+};
 
 #[derive(Default)]
 pub struct MyPaymentService {}
@@ -20,25 +26,12 @@ impl PaymentService for MyPaymentService {
         request: Request<PaymentRequest>,
     ) -> Result<Response<PaymentResponse>, Status> {
         println!("Received payment request: {:?}", request);
-
-        // Process the request and return a response
-        // This example immediately returns a successful result for demonstration purposes
         Ok(Response::new(PaymentResponse { success: true }))
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse()?;
-    let payment_service = MyPaymentService::default();
-
-    Server::builder()
-        .add_service(PaymentServiceServer::new(payment_service))
-        .serve(addr)
-        .await?;
-
-    Ok(())
-}
+#[derive(Default)]
+pub struct MyTransactionService {}
 
 #[tonic::async_trait]
 impl TransactionService for MyTransactionService {
@@ -49,10 +42,13 @@ impl TransactionService for MyTransactionService {
         request: Request<TransactionRequest>,
     ) -> Result<Response<Self::GetTransactionHistoryStream>, Status> {
         println!("Received transaction history request: {:?}", request);
-        let (tx, rx): (Sender<Result<TransactionResponse, Status>>, Receiver<Result<TransactionResponse, Status>>) = mpsc::channel(4);
+        let (tx, rx): (
+            Sender<Result<TransactionResponse, Status>>,
+            Receiver<Result<TransactionResponse, Status>>,
+        ) = mpsc::channel(4);
 
         tokio::spawn(async move {
-            for i in 0..30 { // Simulate sending 30 transaction records
+            for i in 0..30 {
                 if tx.send(Ok(TransactionResponse {
                     transaction_id: format!("trans_{}", i),
                     status: "Completed".to_string(),
@@ -68,23 +64,7 @@ impl TransactionService for MyTransactionService {
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))
-
     }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse()?;
-    let payment_service = MyPaymentService::default();
-    let transaction_service = MyTransactionService::default();
-
-    Server::builder()
-        .add_service(PaymentServiceServer::new(payment_service))
-        .add_service(TransactionServiceServer::new(transaction_service))
-        .serve(addr)
-        .await?;
-
-    Ok(())
 }
 
 #[derive(Default)]
@@ -106,10 +86,12 @@ impl ChatService for MyChatService {
                 println!("Received message: {:?}", message);
                 let reply = ChatMessage {
                     user_id: message.user_id.clone(),
-                    message: format!("Terima kasih telah melakukan chat kepada CS virtual,
-                    Pesan anda akan dibalas pada jam kerja. pesan anda : {}", message.message),
+                    message: format!(
+                        "Terima kasih telah melakukan chat kepada CS virtual, \
+                        Pesan anda akan dibalas pada jam kerja. pesan anda : {}",
+                        message.message
+                    ),
                 };
-
                 tx.send(Ok(reply)).await.unwrap_or_else(|_| {});
             }
         });
@@ -121,6 +103,7 @@ impl ChatService for MyChatService {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
+
     let payment_service = MyPaymentService::default();
     let transaction_service = MyTransactionService::default();
     let chat_service = MyChatService::default();
